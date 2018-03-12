@@ -10,7 +10,7 @@ from baselines.common import explained_variance
 
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
-                nsteps, ent_coef, vf_coef, max_grad_norm):
+                nsteps, ent_coef, vf_coef, max_grad_norm,is_Original):
         sess = tf.get_default_session()
 
         act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False)
@@ -33,9 +33,49 @@ class Model(object):
         vf_losses2 = tf.square(vpredclipped - R)
         vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
         ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
-        pg_losses = -ADV * ratio
-        pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
-        pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
+
+        if is_Original ==0:
+            logger.log("Original Loss")
+            pg_losses = -ADV * ratio
+            pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
+            pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
+        else:
+            eps = CLIPRANGE
+
+            if is_Original == 1:
+                logger.log("Using log(2-gratio)")
+                m_ratio = (1/tf.exp(-OLDNEGLOGPAC)) *(-neglogpac)
+                f_ratio = 1 + eps - tf.nn.relu(1 + eps - ratio)
+                g_ratio = tf.nn.relu(ratio - (1 - eps)) + (1 - eps)
+
+
+                # f_ratio  = ratio
+                # g_ratio = ratio
+                l_p = (tf.nn.relu(ADV) * tf.log(tf.clip_by_value(f_ratio, 1e-10, 1e100)))
+                l_p = ((ADV-tf.reduce_min(ADV)) * tf.log(tf.clip_by_value(ratio, 1e-10, 1e100)))
+                # l_n = -(tf.nn.relu(-1.0 * ADV) * (2*g_ratio - tf.log(tf.clip_by_value(g_ratio, 1e-10, 1e100))))
+                # l_n = -tf.nn.relu(-1.0 * ADV)* ratio
+                l_ratio = -neglogpac
+                r1 = tf.exp(-neglogpac)
+                r2 = tf.exp(-OLDNEGLOGPAC)
+
+                      # - 0.0*tf.nn.l2_loss(r1 - r2)
+
+
+                # l_n = (tf.nn.relu(-1.0 * ADV) * ( tf.log(tf.clip_by_value(2.0- g_ratio, 1e-10, 1e100))))
+                l_n = -(tf.nn.relu(-1.0 * ADV) * g_ratio)
+
+                pg_losses = l_p
+
+
+                pg_loss = -tf.reduce_mean(pg_losses)
+
+                pg_losses = -ADV * tf.log(tf.clip_by_value(ratio, 1e-10, 1e100))
+                pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE+0.2)
+                pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
+
+
+
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
         loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
@@ -154,7 +194,7 @@ def constfn(val):
 def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             vf_coef=0.5,  max_grad_norm=0.5, gamma=0.99, lam=0.95,
             log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
-            save_interval=0):
+            save_interval=0,is_Original = 0):
 
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
@@ -170,7 +210,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
 
     make_model = lambda : Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
-                    max_grad_norm=max_grad_norm)
+                    max_grad_norm=max_grad_norm,is_Original=is_Original)
     if save_interval and logger.get_dir():
         import cloudpickle
         with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:

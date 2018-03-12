@@ -62,9 +62,9 @@ def atari_arg_parser():
     Create an argparse.ArgumentParser for run_atari.py.
     """
     parser = arg_parser()
-    parser.add_argument('--env', help='environment ID', default='BreakoutNoFrameskip-v4')
+    parser.add_argument('--env', help='environment ID', default='BeamRiderNoFrameskip-v4')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
-    parser.add_argument('--num-timesteps', type=int, default=int(10e6))
+    parser.add_argument('--num-timesteps', type=int, default=int(40e6))
     return parser
 
 def mujoco_arg_parser():

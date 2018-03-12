@@ -87,7 +87,7 @@ def learn(env, policy_fn, *,
         cg_damping=1e-2,
         vf_stepsize=3e-4,
         vf_iters =3,
-        max_timesteps=0, max_episodes=0, max_iters=0,  # time constraint
+        max_timesteps=0, max_episodes=0, max_iters=0,is_Original = 0,  # time constraint
         callback=None
         ):
     nworkers = MPI.COMM_WORLD.Get_size()
@@ -114,7 +114,32 @@ def learn(env, policy_fn, *,
     vferr = tf.reduce_mean(tf.square(pi.vpred - ret))
 
     ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) # advantage * pnew / pold
-    surrgain = tf.reduce_mean(ratio * atarg)
+
+    if is_Original == 0:
+
+        surrgain = tf.reduce_mean(ratio * atarg)
+
+    if is_Original == 1:
+
+        surrgain = tf.reduce_mean(tf.log(tf.clip_by_value(ratio, 1e-10, 1e100)) * (atarg ))
+
+    if is_Original == 2:
+
+        surrgain = tf.reduce_mean(tf.log(tf.clip_by_value(ratio, 1e-10, 1e100)) * tf.nn.relu(atarg) -
+                                  (tf.nn.relu(-1.0 * atarg) * (2 *ratio - tf.log(tf.clip_by_value(ratio, 1e-10, 1e100)))))
+
+    if is_Original == 3:
+
+        surrgain =  tf.reduce_mean(tf.log(tf.clip_by_value(ratio, 1e-10, 1e100)) * tf.nn.relu(atarg) +
+                                   tf.nn.relu(-1.0 * atarg) * tf.log(tf.clip_by_value(2 - ratio, 1e-10, 1e100)))
+
+
+
+
+
+
+
+
 
     optimgain = surrgain + entbonus
     losses = [optimgain, meankl, entbonus, surrgain, meanent]
@@ -202,8 +227,8 @@ def learn(env, policy_fn, *,
         # ob, ac, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
         ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
         vpredbefore = seg["vpred"] # predicted value function before udpate
-        atarg = (atarg - atarg.mean()) / atarg.std() # standardized advantage function estimate
-
+        # atarg = (atarg - atarg.mean()) / atarg.std() # standardized advantage function estimate
+        # atarg = (atarg - atarg.mean()) / atarg.std()
         if hasattr(pi, "ret_rms"): pi.ret_rms.update(tdlamret)
         if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
 
@@ -237,6 +262,8 @@ def learn(env, policy_fn, *,
                 meanlosses = surr, kl, *_ = allmean(np.array(compute_losses(*args)))
                 improve = surr - surrbefore
                 logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
+
+
                 if not np.isfinite(meanlosses).all():
                     logger.log("Got non-finite value of losses -- bad!")
                 elif kl > max_kl * 1.5:
@@ -283,6 +310,7 @@ def learn(env, policy_fn, *,
         logger.record_tabular("EpisodesSoFar", episodes_so_far)
         logger.record_tabular("TimestepsSoFar", timesteps_so_far)
         logger.record_tabular("TimeElapsed", time.time() - tstart)
+
 
         if rank==0:
             logger.dump_tabular()

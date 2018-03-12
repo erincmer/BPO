@@ -3,7 +3,7 @@ import argparse
 from baselines.common.cmd_util import mujoco_arg_parser
 from baselines import bench, logger
 
-def train(env_id, num_timesteps, seed):
+def train(env_id, num_timesteps, seed,is_Original):
     from baselines.common import set_global_seeds
     from baselines.common.vec_env.vec_normalize import VecNormalize
     from baselines.ppo2 import ppo2
@@ -19,18 +19,20 @@ def train(env_id, num_timesteps, seed):
     def make_env():
         env = gym.make(env_id)
         env = bench.Monitor(env, logger.get_dir())
+
         return env
     env = DummyVecEnv([make_env])
     env = VecNormalize(env)
 
     set_global_seeds(seed)
+    print("seed = ",seed)
     policy = MlpPolicy
     ppo2.learn(policy=policy, env=env, nsteps=2048, nminibatches=32,
         lam=0.95, gamma=0.99, noptepochs=10, log_interval=1,
         ent_coef=0.0,
         lr=3e-4,
         cliprange=0.2,
-        total_timesteps=num_timesteps)
+        total_timesteps=num_timesteps,is_Original = is_Original )
 
 
 def main():
