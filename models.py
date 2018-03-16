@@ -36,10 +36,10 @@ def softmax(target, axis, name=None):
     normalize = tf.reduce_sum(target_exp, axis, keep_dims=True)
     softmax = target_exp / normalize
     return softmax
-def _cnn_to_mlp(convs, hiddens, dueling, inpt, num_actions, scope, reuse=False, layer_norm=False):
+def _cnn_to_mlp(convs, hiddens,nbins, dueling, inpt, num_actions, scope, reuse=False, layer_norm=False):
 
 
-    nbins = 50
+
     with tf.variable_scope(scope, reuse=reuse):
         out = inpt
         with tf.variable_scope("convnet"):
@@ -57,9 +57,9 @@ def _cnn_to_mlp(convs, hiddens, dueling, inpt, num_actions, scope, reuse=False, 
                 if layer_norm:
                     action_out = layers.layer_norm(action_out, center=True, scale=True)
                 action_out = tf.nn.relu(action_out)
-            action_scores = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=None)
-            action_scores_bin = layers.fully_connected(action_out, num_outputs=num_actions*nbins, activation_fn=None)
-            action_scores_bin_rs = tf.reshape(action_scores_bin,[tf.shape(action_scores_bin)[0],num_actions,nbins])
+            action_scores = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=None)#TODO regression action values
+            action_scores_bin = layers.fully_connected(action_out, num_outputs=num_actions*nbins, activation_fn=None)#TODO discreetization
+            action_scores_bin_rs = tf.reshape(action_scores_bin,[tf.shape(action_scores_bin)[0],num_actions,nbins]) #TODO in order to use (act network) local max for each bin for all actions
 
             # action_scores_bin_softmax = softmax(action_scores_bin, 2)
 
@@ -83,7 +83,7 @@ def _cnn_to_mlp(convs, hiddens, dueling, inpt, num_actions, scope, reuse=False, 
         return action_scores_bin, action_scores_bin_rs
 
 
-def cnn_to_mlp(convs, hiddens, dueling=False, layer_norm=False):
+def cnn_to_mlp(convs, hiddens,nbins =200, dueling=False, layer_norm=False):
     """This model takes as input an observation and returns values of all actions.
 
     Parameters
@@ -103,5 +103,5 @@ def cnn_to_mlp(convs, hiddens, dueling=False, layer_norm=False):
         q_function for DQN algorithm.
     """
 
-    return lambda *args, **kwargs: _cnn_to_mlp(convs, hiddens, dueling, layer_norm=layer_norm, *args, **kwargs)
+    return lambda *args, **kwargs: _cnn_to_mlp(convs, hiddens,nbins, dueling, layer_norm=layer_norm, *args, **kwargs)
 

@@ -96,6 +96,9 @@ def learn(env,
           prioritized_replay_beta0=0.4,
           prioritized_replay_beta_iters=None,
           prioritized_replay_eps=1e-6,
+          min_Val = -100,
+          max_Val = 100,
+          nbins = 200,
           param_noise=False,
           callback=None):
     """Train a deepq model.
@@ -183,7 +186,7 @@ def learn(env,
         optimizer=tf.train.AdamOptimizer(learning_rate=lr),
         gamma=gamma,
         grad_norm_clipping=10,
-        param_noise=param_noise
+        param_noise=param_noise,min_Val = min_Val,max_Val = max_Val,nbins = nbins
     )
 
     act_params = {
@@ -271,36 +274,35 @@ def learn(env,
                 # td_errors,val0,val1,val2,val3,val4,val5,val6 = val(obses_t, actions, rewards, obses_tp1, dones, weights)
                 # print("error before = " , td_errors)
                 td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
-                # td_errors,val0,val1,val2,val3,val4 , val5, val6 = val(obses_t, actions, rewards, obses_tp1, dones, weights)
+                val0,val1,val2,val3,val4,val5 , val6, val7 = val(obses_t, actions, rewards, obses_tp1, dones, weights)
                 # print("error after = ", td_errors)
                 # # q_t_cs, q_tp1_cs, q_tp1_best_masked_cs, sel_act, q_t_selected_cs
+                #new_errors,q_t,q_tp1, q_t_selected , q_t_selected_target , q_tp1_best_masked ,tot_val,q_t_val
+                # print("Loss = ", val0[0])
+                # print("Action = " ,actions[0])
+                # print("Reward = ",rewards[0])
+                # print("CS Network Action Values Shape= ",val1[0].shape)
+                # print("Target Network Action Values Shape= ", val2[0].shape)
+                # print("CS Network Action Bin Dist ", val3[0])
+                # print("Target Network Action Bin Dist ", val4[0])
+                # print("Target Network Best Action Bin Dist ", val5[0])
+                # print("Total Value Calculated ", val6[0])
+                # print("Total Value Converted to Bin " , val7[0] )
                 #
-                # print("Action")
-                # print(actions[0])
-                # print("Reward")
-                # print(rewards[0])
-                # print("Classification Network Selected Action Val")
-                # print(val0[0])
-                # print("Target Network Max Next Action Bin Number")
-                # print(val4[0])
-                # print("Total Q Val")
-                # print(val6[0])
-                # print("Target Bin ")
-                # print(val5[0])
-                # print("Target Network Selected Action Val")
-                # print(val1[0])
-                # print("Target Network Next ")
-                # print(val3[0])
-                # print("Next p best value ")
-                # print(val4[0])
-                # print("Select ACtion mask ")
-                # print(val5[0])
-                # print("Training Network Selected ")
-                # print(val6[0])
-                # print("Target Network Value ")
-                # print(val7[0])
-                # print("Weighted error ")
-                # print(val8)
+                # # print("Target Network Selected Action Val")
+                # # print(val1[0])
+                # # print("Target Network Next ")
+                # # print(val3[0])
+                # # print("Next p best value ")
+                # # print(val4[0])
+                # # print("Select ACtion mask ")
+                # # print(val5[0])
+                # # print("Training Network Selected ")
+                # # print(val6[0])
+                # # print("Target Network Value ")
+                # # print(val7[0])
+                # # print("Weighted error ")
+                # # print(val8)
                 # input("wait")
 
                 if prioritized_replay:
@@ -310,7 +312,7 @@ def learn(env,
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
                 update_target()
-                print(t, done)
+
 
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             num_episodes = len(episode_rewards)

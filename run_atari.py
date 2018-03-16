@@ -21,7 +21,7 @@ def main():
     model = deepq.models.cnn_to_mlp(
         convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
         hiddens=[256],
-        dueling=bool(args.dueling),
+        dueling=bool(args.dueling),nbins = 1000,# TODO number of bins
     )
     act = deepq.learn(
         env,
@@ -36,9 +36,9 @@ def main():
         target_network_update_freq=1000,
         gamma=0.99,
         prioritized_replay=bool(args.prioritized),
-        min_Val= -100,# TODO min value of Q values
-        max_Val = 100,# TODO max value of Q values
-        nbins = 200 # TODO number of bins
+        min_Val= -50,# TODO min value of Q values
+        max_Val = 50,# TODO max value of Q values
+        nbins = 1000 # TODO number of bins
     )
     # act.save("pong_model.pkl") XXX
     env.close()
