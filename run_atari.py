@@ -7,13 +7,13 @@ from baselines.common.atari_wrappers import make_atari
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--env', help='environment ID', default='BeamRiderNoFrameskip-v4')
+    parser.add_argument('--env', help='environment ID', default='BeamRiderNoFrameskip-v4')# TODO changed to Beamrider since it gives larger rewards easy to see progress
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
-    parser.add_argument('--prioritized', type=int, default=0)
-    parser.add_argument('--dueling', type=int, default=0)
+    parser.add_argument('--prioritized', type=int, default=0) # TODO made it false code was complaining
+    parser.add_argument('--dueling', type=int, default=0)# TODO made it false for code simplicity
     parser.add_argument('--num-timesteps', type=int, default=int(10e6))
     args = parser.parse_args()
-    logger.configure("./log/BeamRider")
+    logger.configure("./log/BeamRider") # TODO log results under BeamRider
     set_global_seeds(args.seed)
     env = make_atari(args.env)
     env = bench.Monitor(env, logger.get_dir())
@@ -35,7 +35,10 @@ def main():
         learning_starts=10000,
         target_network_update_freq=1000,
         gamma=0.99,
-        prioritized_replay=bool(args.prioritized)
+        prioritized_replay=bool(args.prioritized),
+        min_Val= -100,# TODO min value of Q values
+        max_Val = 100,# TODO max value of Q values
+        nbins = 200 # TODO number of bins
     )
     # act.save("pong_model.pkl") XXX
     env.close()
