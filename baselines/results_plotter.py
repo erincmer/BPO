@@ -13,7 +13,7 @@ X_TIMESTEPS = 'timesteps'
 X_EPISODES = 'episodes'
 X_WALLTIME = 'walltime_hrs'
 POSSIBLE_X_AXES = [X_TIMESTEPS, X_EPISODES, X_WALLTIME]
-EPISODES_WINDOW = 100
+EPISODES_WINDOW = 100 #average over the last EPISODE_WINDOWS episodes
 COLORS = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple', 'pink',
         'brown', 'orange', 'teal', 'coral', 'lightblue', 'lime', 'lavender', 'turquoise',
         'darkgreen', 'tan', 'salmon', 'gold', 'lightpurple', 'darkred', 'darkblue']
@@ -47,9 +47,11 @@ def plot_curves(xy_list, xaxis, title):
     fig = plt.figure(figsize=(8,8))
     maxx = max(xy[0][-1] for xy in xy_list)
     minx = 0
-    runs = 10
+    runs = 10 #trials
 
     for (i, (x, y)) in enumerate(xy_list):
+        # x: time
+        # y: reward
         color = COLORS[i//runs]
 
         if i % runs ==0:
@@ -85,7 +87,9 @@ def plot_curves(xy_list, xaxis, title):
             xx = np.linspace(roundup(m0), roundup(m1-10), (m1 - m0)//10)
             y_list2 = []
             for e1,e2 in zip(x_list,y_list):
-                y_interp = scipy.interpolate.interp1d(e1, e2)
+                # interpolate for each run
+                # TODO: check
+                y_interp = scipy.interpolate.interp1d(e1, e2) 
                 y_list2.append(y_interp(xx))
 
             y_list = y_list2

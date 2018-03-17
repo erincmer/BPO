@@ -13,33 +13,46 @@ class Model(object):
                 nsteps, ent_coef, vf_coef, max_grad_norm,is_Original):
         sess = tf.get_default_session()
 
+        # Actor network 
         act_model = policy(sess, ob_space, ac_space, nbatch_act, 1, reuse=False)
+        # critic network Q^{W}(s,a) 
         train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps, reuse=True)
 
-        A = train_model.pdtype.sample_placeholder([None])
-        ADV = tf.placeholder(tf.float32, [None])
-        R = tf.placeholder(tf.float32, [None])
-        OLDNEGLOGPAC = tf.placeholder(tf.float32, [None])
-        OLDVPRED = tf.placeholder(tf.float32, [None])
-        LR = tf.placeholder(tf.float32, [])
-        CLIPRANGE = tf.placeholder(tf.float32, [])
+        A = train_model.pdtype.sample_placeholder([None]) # action distro
+        ADV = tf.placeholder(tf.float32, [None]) # target advantage
+        R = tf.placeholder(tf.float32, [None]) # reward
+        OLDNEGLOGPAC = tf.placeholder(tf.float32, [None]) #-log(\pi_{old}) 
+        OLDVPRED = tf.placeholder(tf.float32, [None]) #V(s)
+        LR = tf.placeholder(tf.float32, []) # learning rate
+        CLIPRANGE = tf.placeholder(tf.float32, []) # clip
 
-        neglogpac = train_model.pd.neglogp(A)
+        neglogpac = train_model.pd.neglogp(A) #-log(\pi)
         entropy = tf.reduce_mean(train_model.pd.entropy())
-
-        vpred = train_model.vf
+        
+        # TODO: L^{VF} why ? I don't understand the formula
+        vpred = train_model.vf # V(s) 
         vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
         vf_losses1 = tf.square(vpred - R)
         vf_losses2 = tf.square(vpredclipped - R)
         vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
-        ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
+
+        # L^{CLIP}
+        ratio = tf.exp(OLDNEGLOGPAC - neglogpac) #\frac{\pi}{\pi_{old}}
 
         if is_Original ==0:
             logger.log("Original Loss")
-            pg_losses = -ADV * ratio
-            pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
+            pg_losses = -ADV * ratio #L^{PCI}
+            pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE) #L^{CLIP}
+            # max(L^{CPI}, L^{CLIP})
             pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
         else:
+            with tf.variable_scope('model'): # Get only \theta
+                params = tf.trainable_variables()
+            gradlogpac = tf.gradients(-neglogpac, params)
+            print("gradlogpac: ", gradlogpac)
+            print("gradlogpac.get_shape(): ", len(gradlogpac)) #13
+            print("params.get_shape(): ", len(params))
+            
             eps = CLIPRANGE
 
             if is_Original == 1:
@@ -47,8 +60,6 @@ class Model(object):
                 m_ratio = (1/tf.exp(-OLDNEGLOGPAC)) *(-neglogpac)
                 f_ratio = 1 + eps - tf.nn.relu(1 + eps - ratio)
                 g_ratio = tf.nn.relu(ratio - (1 - eps)) + (1 - eps)
-
-
                 # f_ratio  = ratio
                 # g_ratio = ratio
                 l_p = (tf.nn.relu(ADV) * tf.log(tf.clip_by_value(f_ratio, 1e-10, 1e100)))
@@ -58,27 +69,24 @@ class Model(object):
                 l_ratio = -neglogpac
                 r1 = tf.exp(-neglogpac)
                 r2 = tf.exp(-OLDNEGLOGPAC)
-
                       # - 0.0*tf.nn.l2_loss(r1 - r2)
-
-
                 # l_n = (tf.nn.relu(-1.0 * ADV) * ( tf.log(tf.clip_by_value(2.0- g_ratio, 1e-10, 1e100))))
                 l_n = -(tf.nn.relu(-1.0 * ADV) * g_ratio)
-
                 pg_losses = l_p
-
-
                 pg_loss = -tf.reduce_mean(pg_losses)
-
                 pg_losses = -ADV * tf.log(tf.clip_by_value(ratio, 1e-10, 1e100))
                 pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE+0.2)
                 pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
 
 
-
+        # not used in backprop
         approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
         clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
+        
+        #final loss
         loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
+        
+        # Optimization
         with tf.variable_scope('model'):
             params = tf.trainable_variables()
         grads = tf.gradients(loss, params)

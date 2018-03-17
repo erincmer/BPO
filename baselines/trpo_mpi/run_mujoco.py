@@ -6,7 +6,7 @@ from baselines import logger
 from baselines.ppo1.mlp_policy import MlpPolicy
 from baselines.trpo_mpi import trpo_mpi
 
-def train(env_id, num_timesteps, seed,is_Original,log_str):
+def train(env_id, num_timesteps, seed,is_Original=0,log_str="./logs/"):
     import baselines.common.tf_util as U
     sess = U.single_threaded_session()
     sess.__enter__()
@@ -38,6 +38,7 @@ def train(env_id, num_timesteps, seed,is_Original,log_str):
 
 def main():
     args = mujoco_arg_parser().parse_args()
+    #train(args.env, num_timesteps=args.num_timesteps, seed=args.seed)
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed)
 
 
