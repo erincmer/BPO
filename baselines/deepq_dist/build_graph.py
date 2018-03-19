@@ -195,6 +195,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
         output_actions = tf.cond(stochastic_ph, lambda: stochastic_actions, lambda: deterministic_actions)
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
+        
         _act = U.function(inputs=[observations_ph, stochastic_ph, update_eps_ph],
                          outputs=[output_actions,deterministic_actions],
                          givens={update_eps_ph: -1.0, stochastic_ph: True},
@@ -595,12 +596,13 @@ def build_dist_act(make_obs_ph, dist_func, num_actions, nbins, old_qmin, old_qma
         output_actions = tf.cond(stochastic_ph, lambda: stochastic_actions, lambda: deterministic_actions)
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
 
-        act = U.function(inputs=[observations_ph, stochastic_ph, update_eps_ph],
-                         outputs=output_actions,
+        _act = U.function(inputs=[observations_ph, stochastic_ph, update_eps_ph],
+                         outputs=[output_actions,deterministic_actions],
                          givens={update_eps_ph: -1.0, stochastic_ph: True},
                          updates=[update_eps_expr])
+        def act(ob, stochastic=True, update_eps=-1):
+            return _act(ob, stochastic, update_eps)
         return act
-
 
 def build_dist_train(make_obs_ph, 
         q_func, 
