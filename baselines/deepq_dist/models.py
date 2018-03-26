@@ -60,9 +60,12 @@ def _mlp_to_dist(hiddens, nbins, inpt, num_actions, scope, reuse=False, layer_no
 
         for action in range(num_actions):
                 logits = q_out[:, nbins * action : nbins * (action + 1)]
+                print("logits.get_shape(): ", logits.get_shape())
                 prob = tf.nn.softmax(logits)
                 dists.append(prob)
         # print np.shape(dist[1])
+        print("len(dists): ", len(dists))
+
         dist = tf.concat(dists, axis=1)
 
         return dist
@@ -191,8 +194,8 @@ def _cnn_to_dist(convs, hiddens, num_atoms, dueling, inpt, num_actions, scope, r
                 logits = dist_out[:, num_atoms * action : num_atoms * (action + 1)]
                 prob = tf.nn.softmax(logits)
                 dists.append(prob)
-
-        # print np.shape(dist[1])
+        print("\n\nHEEEERE\n\n")
+        print("np.shape(dists): ", np.shape(dists))
 
         dist = tf.concat(dists, axis=1)
 

@@ -436,13 +436,13 @@ def build_train(make_obs_ph,
         start = old_qmin
         end = old_qmax + delta_z
         z = tf.range(start, end, delta_z)
-        print("z.get_shape: ", z.get_shape())
+        #print("z.get_shape: ", z.get_shape())
         
         # Q_{target}(\phi_{j+1},a,\theta)
         q_as = []
         for action in range(num_actions):
             dist = tf.nn.softmax(q_tp1[:,nbins*action:nbins*(action+1)])
-            print("dist.get_shape: ", dist.get_shape())
+            #print("dist.get_shape: ", dist.get_shape())
             q_a = tf.reduce_sum(tf.multiply(dist, z), axis=1, keep_dims=True)
             q_as.append(q_a)
 
@@ -565,10 +565,17 @@ def q_value_avg(q_dist, nbins, num_actions, old_qmin, old_qmax, delta_z):
 
     for action in range(num_actions):
         dist = q_dist[:, nbins*action: nbins*(action+1)]
-        print("dist.get_shape(): ", dist.get_shape())
-        print("z.get_shape(): ", z.get_shape())
+        #print("dist.get_shape(): ", dist.get_shape())
+        #print("z.get_shape(): ", z.get_shape())
         q_a = tf.reduce_sum(tf.multiply(dist, z), axis = 1, keep_dims = True)
+        
+        # Does not learn
+        #q_a = tf.reduce_max(dist, axis = 1, keep_dims=True)
+        
         q_as.append(q_a)
+
+    print("np.shape(q_a): ", np.shape(q_a))
+    print("np.shape(q_as): ", np.shape(q_as))
 
     q_values = tf.concat(q_as, axis=1)
 
@@ -636,11 +643,13 @@ def build_dist_train(make_obs_ph,
         # p(x_t, a)
         q_t = q_func(obs_t_input.get(), num_actions, scope="dist_func", reuse=True)  # reuse parameters from act
         q_t_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/dist_func")
+        print("q_t.get_shape(): ", q_t.get_shape())
 
         # target value distribution network evalution
         # p(x_(t+1), a)
         q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_dist_func")
         q_tp1_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_dist_func")
+        print("q_tp1.get_shape(): ", q_tp1.get_shape())
 
         # (0) Calculate p(x_t, a_t)
         # x_t is given by ob_t_input, and a_t is given by act_t_ph
@@ -702,16 +711,49 @@ def build_dist_train(make_obs_ph,
 
         err = tf.zeros([batch_size])
 
-        for j in range(nbins):
-            l_index = l_id[:, j] + add_index
-            u_index = u_id[:, j] + add_index
+        #for j in range(nbins):
+        #    l_index = l_id[:, j] + add_index
+        #    u_index = u_id[:, j] + add_index
 
-            p_tl = tf.gather(v_dist_t_selected, l_index)
-            p_tu = tf.gather(v_dist_t_selected, u_index)
-            log_p_tl = tf.log(p_tl)
-            log_p_tu = tf.log(p_tu)
+        #    p_tl = tf.gather(v_dist_t_selected, l_index)
+        #    p_tu = tf.gather(v_dist_t_selected, u_index)
+        #    log_p_tl = tf.log(p_tl)
+        #    log_p_tu = tf.log(p_tu)
+        #    p_tp1 = v_dist_tp1_selected[:,j]
+        #    err = err + p_tp1 * ((u[:,j] - b[:,j]) * log_p_tl + (b[:,j] - l[:,j]) * log_p_tu)
+        
+        m = np.zeros([32, nbins])
+
+        print("b.get_shape(): ", b.get_shape())
+        print("l.get_shape(): ", l.get_shape())
+        print("u.get_shape(): ", u.get_shape())
+
+        for j in range(nbins):
             p_tp1 = v_dist_tp1_selected[:,j]
-            err = err + p_tp1 * ((u[:,j] - b[:,j]) * log_p_tl + (b[:,j] - l[:,j]) * log_p_tu)
+            print("p_tp1.get_shape(): ", p_tp1.get_shape())
+            print("b[:,j].get_shape(): ", b[:,j].get_shape())
+            print("l[:,j].get_shape(): ", l[:,j].get_shape())
+            print("u[:,j].get_shape(): ", u[:,j].get_shape())
+
+            mu = p_tp1 * (b[:,j] - l[:,j]) 
+            ml = p_tp1 * (u[:,j] - b[:,j])
+
+            print("mu.get_shape(): ", mu.get_shape())
+            print("ml.get_shape(): ", ml.get_shape())
+
+            print("u_id[:,j]: ", u_id[:,j])
+            print("m[:,u_id[:,j]].get_shape(): ", m[:,u_id[:,j]].shape)
+            m[:,u_id[:,j]] = m[:,u_id[:,j]]+ mu
+            m[:,l_id[:,j]] += ml
+
+        #m_max = tf.argmax(m, axis=1)
+        #m_1hot = tf.one_hot(m_max, nbins)
+
+        #for j in range(nbins):
+        #    p_t = tf.gather(v_dist_t_selected, l_index)
+        #    log_p_t = tf.log(p_t)
+        #    err = err +  log_p_t * m_1hot[:,j]
+
 
         err = tf.negative(err)
         weighted_error = tf.reduce_mean(err)
@@ -722,11 +764,6 @@ def build_dist_train(make_obs_ph,
                 if grad is not None:
                     gradients[i] = (tf.clip_by_norm(grad, grad_norm_clipping), var)
             optimize_expr = optimizer.apply_gradients(gradients)
-
-            #optimize_expr = U.minimize_and_clip(optimizer,
-            #                                    weighted_error,
-            #                                    var_list=q_t_vars,
-            #                                    clip_val=grad_norm_clipping)
         else:
             optimize_expr = optimizer.minimize(weighted_error, var_list=q_t_vars)
 

@@ -279,41 +279,6 @@ def learn(env,
 
                 td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
                 
-                #q_values = debug['q_values'](obses_t)
-                #print(q_values)
-                #q_min = np.minimum(np.min(q_values),q_min)
-                #q_max = np.maximum(np.max(q_values), q_max)
-
-                #val0,val1,val2,val3,val4,val5 , val6, val7 = val(obses_t, actions, rewards, obses_tp1, dones, weights)
-                # print("error after = ", td_errors)
-                # # q_t_cs, q_tp1_cs, q_tp1_best_masked_cs, sel_act, q_t_selected_cs
-                #new_errors,q_t,q_tp1, q_t_selected , q_t_selected_target , q_tp1_best_masked ,tot_val,q_t_val
-                # print("Loss = ", val0[0])
-                # print("Action = " ,actions[0])
-                # print("Reward = ",rewards[0])
-                # print("CS Network Action Values Shape= ",val1[0].shape)
-                # print("Target Network Action Values Shape= ", val2[0].shape)
-                # print("CS Network Action Bin Dist ", val3[0])
-                # print("Target Network Action Bin Dist ", val4[0])
-                # print("Target Network Best Action Bin Dist ", val5[0])
-                # print("Total Value Calculated ", val6[0])
-                # print("Total Value Converted to Bin " , val7[0] )
-                #
-                # # print("Target Network Selected Action Val")
-                # # print(val1[0])
-                # # print("Target Network Next ")
-                # # print(val3[0])
-                # # print("Next p best value ")
-                # # print(val4[0])
-                # # print("Select ACtion mask ")
-                # # print(val5[0])
-                # # print("Training Network Selected ")
-                # # print(val6[0])
-                # # print("Target Network Value ")
-                # # print(val7[0])
-                # # print("Weighted error ")
-                # # print(val8)
-                # input("wait")
 
                 if prioritized_replay:
                     new_priorities = np.abs(td_errors) + prioritized_replay_eps
@@ -331,6 +296,7 @@ def learn(env,
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
+                logger.record_tabular("New reward", rew)
                 logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
                 logger.dump_tabular()
 

@@ -11,9 +11,9 @@ def callback(lcl, _glb):
 
 
 def main():
-    logger.configure("./log/xp2")
+    logger.configure("./log/xp5")
     env = gym.make("CartPole-v0")
-    nbins = 11
+    nbins = 51
     model = deepq_dist.models.mlp_to_dist(nbins,[64])
     act = deepq_dist.learn(
         env,
