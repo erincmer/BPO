@@ -79,13 +79,14 @@ def load(path):
 
 def learn(env,
           q_func,
+          env_func,
           lr=5e-4,
           max_timesteps=100000,
           buffer_size=50000,
           exploration_fraction=0.1,
           exploration_final_eps=0.02,
           train_freq=1,
-          batch_size=8,
+          batch_size=32,
           print_freq=100,
           checkpoint_freq=10000,
           learning_starts=1000,
@@ -96,9 +97,6 @@ def learn(env,
           prioritized_replay_beta0=0.4,
           prioritized_replay_beta_iters=None,
           prioritized_replay_eps=1e-6,
-          min_Val = -100,
-          max_Val = 100,
-          nbins = 200,
           param_noise=False,
           callback=None):
     """Train a deepq model.
@@ -168,8 +166,6 @@ def learn(env,
     """
     # Create all the functions necessary to train the model
 
-    np.set_printoptions(precision=5, suppress=True, linewidth=250)
-
     sess = tf.Session()
     sess.__enter__()
 
@@ -179,14 +175,17 @@ def learn(env,
     def make_obs_ph(name):
         return BatchInput(observation_space_shape, name=name)
 
-    act, train, update_target, debug, val = deepq.build_train(
+
+
+    act, train, update_target, debug,train_env , val_env = deepq.build_train(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
+        env_func = env_func,
         num_actions=env.action_space.n,
         optimizer=tf.train.AdamOptimizer(learning_rate=lr),
         gamma=gamma,
         grad_norm_clipping=10,
-        param_noise=param_noise,min_Val = min_Val,max_Val = max_Val,nbins = nbins
+        param_noise=param_noise
     )
 
     act_params = {
@@ -243,21 +242,45 @@ def learn(env,
                 kwargs['reset'] = reset
                 kwargs['update_param_noise_threshold'] = update_param_noise_threshold
                 kwargs['update_param_noise_scale'] = True
-            action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
-            action = action[0]
-            env_action = action
-            reset = False
-            new_obs, rew, done, _ = env.step(env_action)
-            # Store transition in the replay buffer.
-            # print(rew)
-            replay_buffer.add(obs, action, rew, new_obs, float(done))
-            obs = new_obs
+            if t < max_timesteps//10:
 
-            episode_rewards[-1] += rew
-            if done:
-                obs = env.reset()
-                episode_rewards.append(0.0)
-                reset = True
+
+                action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+                env_action = action
+                reset = False
+                new_obs, rew, done, _ = env.step(env_action)
+                # Store transition in the replay buffer.
+                replay_buffer.add(obs, action, rew, new_obs, float(done))
+                obs = new_obs
+
+                # print(new_obs)
+                # print(t)
+                # input("wait")
+                episode_rewards[-1] += rew
+                if done:
+                    obs = env.reset()
+                    episode_rewards.append(0.0)
+                    reset = True
+
+            else:
+                action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+                env_action = action
+                reset = False
+                total_return = val_env(obs, env_action)
+                new_obs = total_return[:,0:4]
+                rew = total_return[:,4:5]
+                done = total_return[:,5:6]
+                # Store transition in the replay buffer.
+                replay_buffer.add(obs, action, rew, new_obs, float(done))
+                obs = new_obs
+
+                episode_rewards[-1] += rew
+                if done>0.3:
+                    obs = env.reset()
+                    episode_rewards.append(0.0)
+                    reset = True
+
+
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
@@ -267,43 +290,10 @@ def learn(env,
                 else:
                     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
                     weights, batch_idxes = np.ones_like(rewards), None
-                # print(actions)
-                # print(rewards)
+                td_errors,max_target,qtp1 = train(obses_t, actions, rewards, obses_tp1, dones, weights)
 
-                # td_errors,val0,val1,val2,val3,val4,val5,val6,val7,val8= train(obses_t, actions, rewards, obses_tp1, dones, weights)
-                # td_errors,val0,val1,val2,val3,val4,val5,val6 = val(obses_t, actions, rewards, obses_tp1, dones, weights)
-                # print("error before = " , td_errors)
-                td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
-                val0,val1,val2,val3,val4,val5 , val6, val7 = val(obses_t, actions, rewards, obses_tp1, dones, weights)
-                # print("error after = ", td_errors)
-                # # q_t_cs, q_tp1_cs, q_tp1_best_masked_cs, sel_act, q_t_selected_cs
-                #new_errors,q_t,q_tp1, q_t_selected , q_t_selected_target , q_tp1_best_masked ,tot_val,q_t_val
-                # print("Loss = ", val0[0])
-                # print("Action = " ,actions[0])
-                # print("Reward = ",rewards[0])
-                # print("CS Network Action Values Shape= ",val1[0].shape)
-                # print("Target Network Action Values Shape= ", val2[0].shape)
-                # print("CS Network Action Bin Dist ", val3[0])
-                # print("Target Network Action Bin Dist ", val4[0])
-                # print("Target Network Best Action Bin Dist ", val5[0])
-                # print("Total Value Calculated ", val6[0])
-                # print("Total Value Converted to Bin " , val7[0] )
-                #
-                # # print("Target Network Selected Action Val")
-                # # print(val1[0])
-                # # print("Target Network Next ")
-                # # print(val3[0])
-                # # print("Next p best value ")
-                # # print(val4[0])
-                # # print("Select ACtion mask ")
-                # # print(val5[0])
-                # # print("Training Network Selected ")
-                # # print(val6[0])
-                # # print("Target Network Value ")
-                # # print(val7[0])
-                # # print("Weighted error ")
-                # # print(val8)
-                # input("wait")
+                env_errors, env_t = train_env(obses_t, actions, rewards, obses_tp1, dones, weights)
+
 
                 if prioritized_replay:
                     new_priorities = np.abs(td_errors) + prioritized_replay_eps
@@ -313,11 +303,9 @@ def learn(env,
                 # Update target network periodically.
                 update_target()
 
-
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             num_episodes = len(episode_rewards)
             if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
-
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)

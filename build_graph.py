@@ -180,13 +180,8 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
         eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0))
 
-        _ , q_val= q_func(observations_ph.get(), num_actions, scope="q_func") #TODO in here we do not use q values in 1 D like num*bins but use 2d actions,values
-        #TODO so we could choose max bin for each action and choose max action
-
-
-        deterministic_actions = tf.argmax(tf.argmax(q_val, axis = 2), axis=1)
-
-        # deterministic_actions = tf.argmax(q_values, axis=1)
+        q_values = q_func(observations_ph.get(), num_actions, scope="q_func")
+        deterministic_actions = tf.argmax(q_values, axis=1)
 
         batch_size = tf.shape(observations_ph.get())[0]
         random_actions = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=num_actions, dtype=tf.int64)
@@ -196,7 +191,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
         output_actions = tf.cond(stochastic_ph, lambda: stochastic_actions, lambda: deterministic_actions)
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
         _act = U.function(inputs=[observations_ph, stochastic_ph, update_eps_ph],
-                         outputs=[output_actions,deterministic_actions],
+                         outputs=output_actions,
                          givens={update_eps_ph: -1.0, stochastic_ph: True},
                          updates=[update_eps_expr])
         def act(ob, stochastic=True, update_eps=-1):
@@ -319,8 +314,8 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
         return act
 
 
-def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,min_Val = -100,max_Val = 100,nbins = 200,
-    double_q=False, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None):
+def build_train(make_obs_ph, q_func,env_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
+    double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None):
     """Creates the train function:
 
     Parameters
@@ -380,11 +375,8 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
     else:
         act_f = build_act(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
 
-
     with tf.variable_scope(scope, reuse=reuse):
         # set up placeholders
-
-
         obs_t_input = make_obs_ph("obs_t")
         act_t_ph = tf.placeholder(tf.int32, [None], name="action")
         rew_t_ph = tf.placeholder(tf.float32, [None], name="reward")
@@ -392,26 +384,25 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         done_mask_ph = tf.placeholder(tf.float32, [None], name="done")
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
+
+
+        state_act = tf.concat([obs_t_input.get(),tf.cast(tf.expand_dims(act_t_ph,1),tf.float32)],1)
+
+        state_act_out = tf.concat([obs_tp1_input.get(),tf.expand_dims(rew_t_ph,1),tf.expand_dims(done_mask_ph,1)],1)
+        shape_list  = state_act_out.get_shape().as_list()
+        env_t = env_func(state_act,shape_list[1], scope="env_func")  # reuse parameters from act
+        env_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/env_func")
+
         # q network evaluation
-        q_t,_ = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # TODO left value is 1D num_actions* bins right is 2D num_actions,values but we dont use it here
+        q_t = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
         # target q network evalution
-        _,q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func") # TODO left value is 1D num_actions* bins right is 2D num_actions,values but we dont use it here
+        q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
         # q scores for actions which we know were selected in the given state.
-        # q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
-
-
-        sel_act = tf.expand_dims(tf.one_hot(act_t_ph, num_actions),2)# TODO in order to create a mask with multiple ones for given action we first create a one mask and tile
-
-        # sel_act = tf.zeros_like(q_t_cs)
-        # sel_act[:, act_t_ph*3:act_t_ph*3 + 3] = 0
-
-        sel = tf.tile(sel_act, [1,1,nbins]) # TODO we multiply mask with number of bins
-        sel_act = tf.reshape(sel , [tf.shape(sel)[0],tf.shape(sel)[1]*tf.shape(sel)[2]])
-        q_t_selected = q_t * sel_act #TODO we select the action with all bins
+        q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
 
         # compute estimate of best possible value starting from state at t + 1
         if double_q:
@@ -419,41 +410,21 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
             q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
         else:
-            # q_tp1_best = tf.reduce_max(q_tp1, 1)
-            q_tp1_best = tf.reduce_max(tf.cast(tf.argmax(q_tp1, 2),tf.float32),1) # TODO we choose highest next Q value
-
-
-        # q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best
-        # print("q tp1 0 = ", q_tp1_best.get_shape())
-        # print("q tp1 1 = ", q_tp1_best_cs.get_shape())
-
-        q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best # TODO if last action we use reward only
-
-
+            q_tp1_best = tf.reduce_max(q_tp1, 1)
+        q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best
 
         # compute RHS of bellman equation
-        # q_t_selected_target = rew_t_ph + gamma * q_tp1_best_masked
-
-        bin_val  = (max_Val-(min_Val))/nbins #TODO value for each bin
-
-        tot_val = (q_tp1_best_masked * bin_val  + bin_val/2) + min_Val # TODO we convert bin to actual value
-        tot_val = rew_t_ph + gamma * (tot_val)# TODO calculate the target Q value
-
-        # tot_val = (tot_val - (-100)) / bin_val
-
-
-
-        q_t_val = tf.cast(((tf.clip_by_value(tot_val,min_Val,max_Val) - (min_Val)) // bin_val),tf.int32)# TODO convert it to a bin
-
-
-
-        q_t_selected_target = tf.one_hot(act_t_ph*nbins +q_t_val,nbins*num_actions) # TODO convert it to one hot encoding
+        q_t_selected_target = rew_t_ph + gamma * q_tp1_best_masked
 
         # compute the error (potentially clipped)
-        new_errors = tf.nn.softmax_cross_entropy_with_logits(labels =q_t_selected_target, logits =  q_t_selected )  # TODO cross entropy
+        td_error = q_t_selected - tf.stop_gradient(q_t_selected_target)
+        errors = U.huber_loss(td_error)
 
 
-        weighted_error = tf.reduce_mean(importance_weights_ph * new_errors)
+
+        env_errors = tf.reduce_mean(U.huber_loss(env_t -  state_act_out))
+
+        weighted_error = tf.reduce_mean(importance_weights_ph * errors)
 
         # compute optimization op (potentially with gradient clipping)
         if grad_norm_clipping is not None:
@@ -465,6 +436,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         else:
             optimize_expr = optimizer.minimize(weighted_error, var_list=q_func_vars)
 
+        optimize_expr_env = optimizer.minimize(env_errors, var_list=env_func_vars)
         # update_target_fn will be called periodically to copy Q network to target Q network
         update_target_expr = []
         for var, var_target in zip(sorted(q_func_vars, key=lambda v: v.name),
@@ -482,12 +454,10 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 done_mask_ph,
                 importance_weights_ph
             ],
-            # outputs=[td_error , q_t_selected , q_t_selected_target , q_t_cs , q_tp1_cs , q_tp1_best_masked_cs,sel_act,q_t_selected_cs,q_t_selected_target_cs,weighted_error],
-            outputs=[new_errors],
-
+            outputs=[td_error,q_t_selected_target,q_tp1],
             updates=[optimize_expr]
         )
-        val = U.function( #TODO this is added only to monitor if values are calculated correctly
+        train_env = U.function(
             inputs=[
                 obs_t_input,
                 act_t_ph,
@@ -496,11 +466,18 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 done_mask_ph,
                 importance_weights_ph
             ],
-            # outputs=[td_error , q_t_selected , q_t_selected_target , q_t_cs , q_tp1_cs , q_tp1_best_masked_cs,sel_act,q_t_selected_cs,q_t_selected_target_cs,weighted_error],
-            outputs=[new_errors,q_t,q_tp1, q_t_selected , q_t_selected_target , q_tp1_best_masked ,tot_val,q_t_val  ]
+            outputs=[env_errors,env_t],
+            updates=[optimize_expr_env]
+        )
+        val_env = U.function(
+            inputs=[
+                obs_t_input,
+                act_t_ph,
+            ],
+            outputs=env_t
         )
         update_target = U.function([], [], updates=[update_target_expr])
 
         q_values = U.function([obs_t_input], q_t)
 
-        return act_f, train, update_target, {'q_values': q_values} , val
+        return act_f, train, update_target, {'q_values': q_values} , train_env , val_env
