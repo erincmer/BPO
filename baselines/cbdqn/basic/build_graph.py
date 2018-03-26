@@ -95,7 +95,7 @@ The functions in this file can are used to create the following functions:
 """
 import tensorflow as tf
 import baselines.common.tf_util as U
-
+import numpy as np
 
 def scope_vars(scope, trainable_only=False):
     """
@@ -182,9 +182,10 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
         _ , q_val= q_func(observations_ph.get(), num_actions, scope="q_func") #TODO in here we do not use q values in 1 D like num*bins but use 2d actions,values
         #TODO so we could choose max bin for each action and choose max action
-
-        print("build_act::q_val.get_shape(): ", q_val.get_shape())
-
+        
+        #[-1, 9, 100]
+        #print("build_act::q_val.get_shape(): ", q_val.get_shape())
+        print("q_val.shape: ", tf.shape(q_val))
         deterministic_actions = tf.argmax(tf.argmax(q_val, axis = 2), axis=1)
 
         batch_size = tf.shape(observations_ph.get())[0]
@@ -318,8 +319,20 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
         return act
 
 
-def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,min_Val = -100,max_Val = 100,nbins = 200,
-    double_q=False, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None):
+def build_train(make_obs_ph, 
+        q_func, 
+        num_actions, 
+        optimizer, 
+        grad_norm_clipping=None, 
+        gamma=1.0, 
+        qmin = -100,
+        qmax = 100,
+        nbins = 200,
+        double_q=False, 
+        scope="deepq", 
+        reuse=None, 
+        param_noise=False, 
+        param_noise_filter_func=None):
     """Creates the train function:
 
     Parameters
@@ -379,6 +392,8 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
     else:
         act_f = build_act(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
 
+    print("build_train::num_actions: ", num_actions) #OK
+
 
     with tf.variable_scope(scope, reuse=reuse):
         # set up placeholders
@@ -390,49 +405,47 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
-        q_t,_ = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # (1D num_actions* bins,2D num_actions,values)
+        q_t,q_t2D = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # (1D num_actions* bins,2D num_actions,values)
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
         # target q network evalution
         _,q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func") # (1D num_actions* bins,2D num_actions,values)
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
-        # q scores for actions which we know were selected in the given state Q(\phi_j, a_j).
-        sel_act = tf.expand_dims(tf.one_hot(act_t_ph, num_actions),2)
-        print("sel_act.get_shape(): ", sel_act.get_shape())
-        # in order to create a mask with multiple ones for given action we first create a one mask and tile
-        # TODO: I don't think it tiles but just add a dimension of 1
+        # q scores for actions which we know were selected in the given state Q(\phi_j, a_j)
 
-        sel = tf.tile(sel_act, [1,1,nbins]) # we multiply mask with number of bins
-        print("sel.get_shape(): ", sel.get_shape())
-        sel_act = tf.reshape(sel , [tf.shape(sel)[0],tf.shape(sel)[1]*tf.shape(sel)[2]])
-        print("sel_act.get_shape(): ", sel_act.get_shape())
-        q_t_selected = q_t * sel_act # we select the action with all bins
-        print("q_t_selected.get_shape(): ", q_t_selected.get_shape())
+        print("tf.shape(act_t_ph): ", tf.shape(act_t_ph))
+        
+        #print("q_t.get_shape()): ", q_t.get_shape())
+        print("q_t2D.get_shape()): ", q_t2D.get_shape())
+        print("act_t_ph.get_shape()): ", act_t_ph.get_shape())
+        #print("size.get_shape()): ", size.get_shape())
 
-        # compute estimate of best possible value starting from state at t + 1
+        logits_list = []
+        for i in range(32):
+            logits_list.append( q_t2D[i,act_t_ph[i],:])
+        logits = tf.stack(logits_list)
+        print("logits.get_shape()): ", logits.get_shape())
+
         if double_q:
             q_tp1_using_online_net = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
             q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
             q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
         else:
             # bin of  max_{a'}(Q(\phi_{j+1), a') 
-            q_tp1_best = tf.reduce_max(tf.cast(tf.argmax(q_tp1, 2),tf.float32),1) # we choose highest next Q bin
+            b_tp1_best = tf.reduce_max(tf.cast(tf.argmax(q_tp1, 2),tf.float32),1) # we choose highest next Q bin
+        print("b_tp1_best.get_shape(): ", b_tp1_best.get_shape())
 
         # compute RHS of bellman equation
-        bin_val = (max_Val-(min_Val))/nbins #delta_bin: value for each bin
-        tot_val = (q_tp1_best_masked * bin_val  + bin_val/2) + min_Val # bin2Q -> max_{a'}(Q(\phi_{j+1), a')
-        tot_val = (1.0 - done_mask_ph) * tot_val
-        tot_val = rew_t_ph + gamma * (tot_val)# target Q value
+        dbin = (qmax-qmin)/nbins #delta_bin
+        # bin2Q -> max_{a'}(Q(\phi_{j+1), a')
+        q_tp1_best = (b_tp1_best*dbin + dbin/2) + qmin
 
-        q_t_val = tf.cast(( (tf.clip_by_value(tot_val,min_Val,max_Val) - (min_Val)) // bin_val),tf.int32)# label_bin: Q2bin(target)
-
-        q_t_selected_target = tf.one_hot(act_t_ph*nbins +q_t_val,nbins*num_actions) # convert it to one hot encoding
+        bin_target = tf.cast(( (tf.clip_by_value(q_tp1_best,qmin,qmax) - qmin) // dbin),tf.int32)# label_bin: Q2bin(target)
 
         # compute the error (potentially clipped)
         new_errors = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                      logits=q_t_selected_target, labels=q_t_val)
-        #new_errors = tf.nn.softmax_cross_entropy_with_logits(labels =q_t_selected_target, logits =  q_t_selected )  # cross entropy
+                      logits=logits, labels=bin_target)
 
         weighted_error = tf.reduce_mean(importance_weights_ph * new_errors)
 
@@ -476,10 +489,11 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 done_mask_ph,
                 importance_weights_ph
             ],
-            outputs=[new_errors,q_t,q_tp1, q_t_selected , q_t_selected_target , q_tp1_best_masked ,tot_val,q_t_val  ]
+            outputs=[new_errors],
+            #,q_t,q_tp1, q_t_selected , q_t_selected_target , q_tp1_best ,tot_val,q_t_val  ]
         )
         update_target = U.function([], [], updates=[update_target_expr])
 
-        q_values = U.function([obs_t_input], q_t)
+        q_values = U.function([obs_t_input], q_t2D)
 
         return act_f, train, update_target, {'q_values': q_values} , val

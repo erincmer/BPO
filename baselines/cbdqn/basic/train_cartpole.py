@@ -1,6 +1,6 @@
 import gym
 
-from baselines import deepq2
+from baselines.cbdqn import basic
 from baselines import logger
 
 
@@ -14,8 +14,8 @@ def main():
     logger.configure("./log/xp2")
     env = gym.make("CartPole-v0")
     nbins = 10
-    model = deepq2.models.mlp(nbins,[64])
-    act = deepq2.learn(
+    model = basic.models.mlp(nbins,[64])
+    act = basic.learn(
         env,
         q_func=model,
         lr=1e-3,

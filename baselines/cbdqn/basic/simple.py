@@ -10,9 +10,9 @@ import gym
 import baselines.common.tf_util as U
 from baselines import logger
 from baselines.common.schedules import LinearSchedule
-from baselines import deepq2
-from baselines.deepq2.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
-from baselines.deepq2.utils import BatchInput, load_state, save_state
+from baselines.cbdqn import basic
+from baselines.cbdqn.basic.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
+from baselines.cbdqn.basic.utils import BatchInput, load_state, save_state
 
 
 class ActWrapper(object):
@@ -24,7 +24,7 @@ class ActWrapper(object):
     def load(path):
         with open(path, "rb") as f:
             model_data, act_params = cloudpickle.load(f)
-        act = deepq2.build_act(**act_params)
+        act = basic.build_act(**act_params)
         sess = tf.Session()
         sess.__enter__()
         with tempfile.TemporaryDirectory() as td:
@@ -96,12 +96,12 @@ def learn(env,
           prioritized_replay_beta0=0.4,
           prioritized_replay_beta_iters=None,
           prioritized_replay_eps=1e-6,
-          min_Val = -100,
-          max_Val = 100,
-          nbins = 200,
+          qmin = -7,
+          qmax = 17,
+          nbins = 20,
           param_noise=False,
           callback=None):
-    """Train a deepq2 model.
+    """Train a cbdqn model.
 
     Parameters
     -------
@@ -164,7 +164,7 @@ def learn(env,
     -------
     act: ActWrapper
         Wrapper over act function. Adds ability to save it and load it.
-        See header of baselines/deepq2/categorical.py for details on the act function.
+        See header of baselines/cbdqn/categorical.py for details on the act function.
     """
     # Create all the functions necessary to train the model
 
@@ -179,7 +179,7 @@ def learn(env,
     def make_obs_ph(name):
         return BatchInput(observation_space_shape, name=name)
 
-    act, train, update_target, debug, val = deepq2.build_train(
+    act, train, update_target, debug, val = basic.build_train(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
@@ -187,10 +187,10 @@ def learn(env,
         gamma=gamma,
         grad_norm_clipping=10,
         param_noise=param_noise,
-        min_Val = min_Val,
-        max_Val = max_Val,
+        qmin = qmin,
+        qmax = qmax,
         nbins = nbins
-    )
+        )
 
     act_params = {
         'make_obs_ph': make_obs_ph,
@@ -274,7 +274,13 @@ def learn(env,
                     weights, batch_idxes = np.ones_like(rewards), None
 
                 td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
-                val0,val1,val2,val3,val4,val5 , val6, val7 = val(obses_t, actions, rewards, obses_tp1, dones, weights)
+                
+                #q_values = debug['q_values'](obses_t)
+                #print(q_values)
+                #q_min = np.minimum(np.min(q_values),q_min)
+                #q_max = np.maximum(np.max(q_values), q_max)
+
+                #val0,val1,val2,val3,val4,val5 , val6, val7 = val(obses_t, actions, rewards, obses_tp1, dones, weights)
                 # print("error after = ", td_errors)
                 # # q_t_cs, q_tp1_cs, q_tp1_best_masked_cs, sel_act, q_t_selected_cs
                 #new_errors,q_t,q_tp1, q_t_selected , q_t_selected_target , q_tp1_best_masked ,tot_val,q_t_val
