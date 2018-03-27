@@ -167,15 +167,26 @@ def learn(env,
         q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
         
-        # loss
-        q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1) #r_j
-        q_tp1_best = tf.reduce_max(q_tp1, 1) # max Q(s',a')
-        q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_best
+        # Q_{train}(a,s)
+        q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1) 
+        
+        # y_j
+        oldpi_act_proba = oldpi.pd.logits
+        act_best = tf.argmax(oldpi_act_proba, axis=1) # argmax \pi(s_{j+1})
+        q_tp1_sampled = tf.reduce_sum(q_tp1 * tf.one_hot(act_best, num_actions), 1) # Q_{target}(s_{j+1}, argmax(\pi(s_{j+1}))
+        q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_sampled
         q_t_selected_target = rew_t_ph + gamma * q_tp1_best_masked
+        
+        # Regression loss
         td_error = q_t_selected - tf.stop_gradient(q_t_selected_target)
         errors = U.huber_loss(td_error)
         weighted_error = tf.reduce_mean(importance_weights_ph * errors)
+        
+        # argmax_a Q_{target}(s_j, a)
+        z_j = tf.argmax(q_tp1, axis=1) # max Q(s',a')
 
+        # classification loss
+        
         # compute optimization op (potentially with gradient clipping)
         if grad_norm_clipping is not None:
             gradients = optimizer.compute_gradients(weighted_error, var_list=q_func_vars)
