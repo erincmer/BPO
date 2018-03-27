@@ -212,16 +212,6 @@ def learn(env,
 
         debug = {'q_values': q_values}
 
-    #act, train, update_target, debug = deepq.build_train(
-    #    make_obs_ph=make_obs_ph,
-    #    q_func=q_func,
-    #    num_actions=env.action_space.n,
-    #    optimizer=tf.train.AdamOptimizer(learning_rate=lr),
-    #    gamma=gamma,
-    #    grad_norm_clipping=10,
-    #    param_noise=param_noise
-    #)
-
     act_params = {
         'make_obs_ph': make_obs_ph,
         'q_func': q_func,
@@ -231,16 +221,8 @@ def learn(env,
     act = ActWrapper(act, act_params)
 
     # Create the replay buffer
-    if prioritized_replay:
-        replay_buffer = PrioritizedReplayBuffer(buffer_size, alpha=prioritized_replay_alpha)
-        if prioritized_replay_beta_iters is None:
-            prioritized_replay_beta_iters = max_timesteps
-        beta_schedule = LinearSchedule(prioritized_replay_beta_iters,
-                                       initial_p=prioritized_replay_beta0,
-                                       final_p=1.0)
-    else:
-        replay_buffer = ReplayBuffer(buffer_size)
-        beta_schedule = None
+    replay_buffer = ReplayBuffer(buffer_size)
+    beta_schedule = None
     # Create the schedule for exploration starting from 1.
     exploration = LinearSchedule(schedule_timesteps=int(exploration_fraction * max_timesteps),
                                  initial_p=1.0,
@@ -268,15 +250,16 @@ def learn(env,
                 update_param_noise_threshold = 0.
             else:
                 update_eps = 0.
-                # Compute the threshold such that the KL divergence between perturbed and non-perturbed
-                # policy is comparable to eps-greedy exploration with eps = exploration.value(t).
-                # See Appendix C.1 in Parameter Space Noise for Exploration, Plappert et al., 2017
-                # for detailed explanation.
                 update_param_noise_threshold = -np.log(1. - exploration.value(t) + exploration.value(t) / float(env.action_space.n))
                 kwargs['reset'] = reset
                 kwargs['update_param_noise_threshold'] = update_param_noise_threshold
                 kwargs['update_param_noise_scale'] = True
-            action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+            
+            action = env.action_space.sample() # not used, just so we have the datatype
+            stochastic=True
+            action, _ = pi.act(stochastic, obs)
+            
+            #action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
             env_action = action
             reset = False
             new_obs, rew, done, _ = env.step(env_action)
@@ -292,21 +275,16 @@ def learn(env,
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
-                if prioritized_replay:
-                    experience = replay_buffer.sample(batch_size, beta=beta_schedule.value(t))
-                    (obses_t, actions, rewards, obses_tp1, dones, weights, batch_idxes) = experience
-                else:
-                    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
-                    weights, batch_idxes = np.ones_like(rewards), None
+                obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
+                weights, batch_idxes = np.ones_like(rewards), None
                 td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
-                if prioritized_replay:
-                    new_priorities = np.abs(td_errors) + prioritized_replay_eps
-                    replay_buffer.update_priorities(batch_idxes, new_priorities)
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
                 update_target()
+            
 
+            # Log train and res
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             num_episodes = len(episode_rewards)
             if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
