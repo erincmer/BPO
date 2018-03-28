@@ -156,8 +156,11 @@ def learn(env,
         # add
         ob_space = env.observation_space
         ac_space = env.action_space
-        pi = policy_fn("pi", ob_space, ac_space) # train pi
-        oldpi = policy_fn("oldpi", ob_space, ac_space) # target pi
+        pi, act = policy_fn(obs_t_input.get(), ob_space, ac_space, scope="pi_func") # train pi
+        pi_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/pi_func")
+        
+        pi_tp1, act_tp1 = policy_fn(obs_tp1_input.get(), ob_space, ac_space, scope="target_pi_func") # target pi
+        target_pi_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/taget_pi_func")
  
         # q network evaluation
         q_t = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
@@ -171,8 +174,8 @@ def learn(env,
         q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1) 
         
         # y_j
-        oldpi_act_proba = oldpi.pd.logits
-        act_best = tf.argmax(oldpi_act_proba, axis=1) # argmax \pi(s_{j+1})
+        #oldpi_logits = oldpi.pd.logits
+        act_best = tf.argmax(pi, axis=1) # argmax \pi(s_{j+1})
         q_tp1_sampled = tf.reduce_sum(q_tp1 * tf.one_hot(act_best, num_actions), 1) # Q_{target}(s_{j+1}, argmax(\pi(s_{j+1}))
         q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_sampled
         q_t_selected_target = rew_t_ph + gamma * q_tp1_best_masked
@@ -223,13 +226,13 @@ def learn(env,
 
         debug = {'q_values': q_values}
 
-    act_params = {
-        'make_obs_ph': make_obs_ph,
-        'q_func': q_func,
-        'num_actions': env.action_space.n,
-    }
+    #act_params = {
+    #    'make_obs_ph': make_obs_ph,
+    #    'q_func': q_func,
+    #    'num_actions': env.action_space.n,
+    #}
 
-    act = ActWrapper(act, act_params)
+    #act = ActWrapper(act, act_params)
 
     # Create the replay buffer
     replay_buffer = ReplayBuffer(buffer_size)
@@ -268,7 +271,9 @@ def learn(env,
             
             action = env.action_space.sample() # not used, just so we have the datatype
             stochastic=True
-            action, _ = pi.act(stochastic, obs)
+            ac1, vpred1 =  act(stochastic, np.array(obs)[None])
+            action = ac1[0]
+            #action, _ = pi.act(stochastic, obs)
             
             #action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
             env_action = action

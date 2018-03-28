@@ -14,15 +14,16 @@ LOG_DIR="./log/test/"
 def main():
 
     # policy model
-    def policy_fn(name, ob_space, ac_space):
-        return mlp_policy.MlpPolicy(name=name, ob_space=ob_space, ac_space=ac_space,
-            hid_size=64, num_hid_layers=2)
+    #def policy_fn(name, ob_space, ac_space):
+    #    return mlp_policy.MlpPolicy(name=name, ob_space=ob_space, ac_space=ac_space,
+    #        hid_size=64, num_hid_layers=2)
 
     env = gym.make("CartPole-v0")
     logger.configure(LOG_DIR)
 
     # q model
     model = ampi.models.mlp([64])
+    policy_fn = ampi.mlp_policy.mlpPolicy([64])
     
     act = ampi.learn(
         env,
