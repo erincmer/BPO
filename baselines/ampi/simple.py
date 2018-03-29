@@ -141,7 +141,8 @@ def learn(env,
     reuse=None
     grad_norm_clipping=None
     num_actions=env.action_space.n
-    optimizer=tf.train.AdamOptimizer(learning_rate=lr)
+    optimizer_q=tf.train.AdamOptimizer(learning_rate=lr)
+    optimizer_pi=tf.train.AdamOptimizer(learning_rate=lr)
     act = build_act(make_obs_ph, q_func, num_actions=env.action_space.n, scope=scope, reuse=reuse)
     
     with tf.variable_scope(scope, reuse=reuse):
@@ -174,7 +175,6 @@ def learn(env,
         q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1) 
         
         # y_j
-        #oldpi_logits = oldpi.pd.logits
         act_best = tf.argmax(pi, axis=1) # argmax \pi(s_{j+1})
         q_tp1_sampled = tf.reduce_sum(q_tp1 * tf.one_hot(act_best, num_actions), 1) # Q_{target}(s_{j+1}, argmax(\pi(s_{j+1}))
         q_tp1_best_masked = (1.0 - done_mask_ph) * q_tp1_sampled
@@ -189,23 +189,42 @@ def learn(env,
         z_j = tf.argmax(q_tp1, axis=1) # max Q(s',a')
 
         # classification loss
+        cl_error = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                      logits=pi, labels=z_j)
         
-        # compute optimization op (potentially with gradient clipping)
+        # Q optimization
         if grad_norm_clipping is not None:
-            gradients = optimizer.compute_gradients(weighted_error, var_list=q_func_vars)
-            for i, (grad, var) in enumerate(gradients):
+            gradients_q = optimizer_q.compute_gradients(weighted_error, var_list=q_func_vars)
+            for i, (grad, var) in enumerate(gradients_qq):
                 if grad is not None:
-                    gradients[i] = (tf.clip_by_norm(grad, grad_norm_clipping), var)
-            optimize_expr = optimizer.apply_gradients(gradients)
+                    gradients_q[i] = (tf.clip_by_norm(grad, grad_norm_clipping), var)
+            optimize_q = optimizer_q.apply_gradients(gradients_q)
         else:
-            optimize_expr = optimizer.minimize(weighted_error, var_list=q_func_vars)
+            optimize_q = optimizer_q.minimize(weighted_error, var_list=q_func_vars)
 
-        # update_target_fn will be called periodically to copy Q network to target Q network
+        # pi optimization
+        if grad_norm_clipping is not None:
+            gradients_pi = optimizer_pi.compute_gradients(cl_error, var_list=pi_func_vars)
+            for i, (grad, var) in enumerate(gradients_pi):
+                if grad is not None:
+                    gradients_pi[i] = (tf.clip_by_norm(grad, grad_norm_clipping), var)
+            optimize_pi = optimizer_pi.apply_gradients(gradients_pi)
+        else:
+            optimize_pi = optimizer_pi.minimize(cl_error, var_list=pi_func_vars)
+
+        # update_target Q
         update_target_expr = []
         for var, var_target in zip(sorted(q_func_vars, key=lambda v: v.name),
                                    sorted(target_q_func_vars, key=lambda v: v.name)):
             update_target_expr.append(var_target.assign(var))
         update_target_expr = tf.group(*update_target_expr)
+
+        # update_target pi
+        update_target_pi = []
+        for var, var_target in zip(sorted(pi_func_vars, key=lambda v: v.name),
+                                   sorted(target_pi_func_vars, key=lambda v: v.name)):
+            update_target_pi.append(var_target.assign(var))
+        update_target_pi = tf.group(*update_target_pi)
 
         # Create callable functions
         train = U.function(
@@ -217,22 +236,14 @@ def learn(env,
                 done_mask_ph,
                 importance_weights_ph
             ],
-            outputs=td_error,
-            updates=[optimize_expr]
+            outputs=[td_error, cl_error],
+            updates=[optimize_q, optimize_pi]
         )
-        update_target = U.function([], [], updates=[update_target_expr])
+        update_target = U.function([], [], updates=[update_target_expr, update_target_pi])
 
         q_values = U.function([obs_t_input], q_t)
 
         debug = {'q_values': q_values}
-
-    #act_params = {
-    #    'make_obs_ph': make_obs_ph,
-    #    'q_func': q_func,
-    #    'num_actions': env.action_space.n,
-    #}
-
-    #act = ActWrapper(act, act_params)
 
     # Create the replay buffer
     replay_buffer = ReplayBuffer(buffer_size)

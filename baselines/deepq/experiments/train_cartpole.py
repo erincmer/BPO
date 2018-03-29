@@ -1,6 +1,7 @@
 import gym
 
 from baselines import deepq
+from baselines import logger
 
 
 def callback(lcl, _glb):
@@ -8,9 +9,12 @@ def callback(lcl, _glb):
     is_solved = lcl['t'] > 100 and sum(lcl['episode_rewards'][-101:-1]) / 100 >= 199
     return is_solved
 
+LOG_DIR = "/home/gpu_user/assia/ws/tf/BPO/baselines/deepq/log/"
+XP_NAME = "basic/"
 
 def main():
     env = gym.make("CartPole-v0")
+    logger.configure(LOG_DIR + XP_NAME)
     model = deepq.models.mlp([64])
     act = deepq.learn(
         env,

@@ -9,7 +9,8 @@ def callback(lcl, _glb):
     is_solved = lcl['t'] > 100 and sum(lcl['episode_rewards'][-101:-1]) / 100 >= 199
     return is_solved
 
-LOG_DIR="./log/test/"
+LOG_DIR="/home/gpu_user/assia/ws/tf/BPO/baselines/ampi/log"
+XP_NAME = "basic"
 
 def main():
 
@@ -19,7 +20,7 @@ def main():
     #        hid_size=64, num_hid_layers=2)
 
     env = gym.make("CartPole-v0")
-    logger.configure(LOG_DIR)
+    logger.configure(LOG_DIR + XP_NAME)
 
     # q model
     model = ampi.models.mlp([64])
