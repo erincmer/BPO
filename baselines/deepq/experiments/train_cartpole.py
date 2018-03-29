@@ -2,6 +2,7 @@ import gym
 
 from baselines import deepq
 from baselines import logger
+from baselines import bench
 
 
 def callback(lcl, _glb):
@@ -15,6 +16,7 @@ XP_NAME = "basic/"
 def main():
     env = gym.make("CartPole-v0")
     logger.configure(LOG_DIR + XP_NAME)
+    env = bench.Monitor(env, logger.get_dir())
     model = deepq.models.mlp([64])
     act = deepq.learn(
         env,
